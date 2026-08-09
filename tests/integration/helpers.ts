@@ -81,6 +81,37 @@ export interface Actor {
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
+ * Global request pacing.
+ *
+ * Retrying a rate limiter harder is the wrong instinct — it is the burst itself
+ * that trips it. Nhost's free tier tolerates a steady trickle but not 60 tests
+ * firing back to back, so every request in the suite is serialized through this
+ * gate with a minimum gap between them.
+ *
+ * Default 0 (no pacing) because the local docker stack has no such limit and
+ * pacing there would just make the suite slow for no reason. Set
+ * TEST_REQUEST_INTERVAL_MS=250 when pointing at Nhost Cloud.
+ */
+const MIN_REQUEST_INTERVAL_MS = Number(process.env.TEST_REQUEST_INTERVAL_MS ?? '0');
+let gate: Promise<void> = Promise.resolve();
+
+function paced<T>(fn: () => Promise<T>): Promise<T> {
+  if (MIN_REQUEST_INTERVAL_MS <= 0) return fn();
+  const run = gate.then(fn);
+  // Chain the next caller behind this one plus the interval, regardless of
+  // whether it resolved or rejected — a failed request still consumed a slot.
+  gate = run.then(
+    async () => {
+      await pause(MIN_REQUEST_INTERVAL_MS);
+    },
+    async () => {
+      await pause(MIN_REQUEST_INTERVAL_MS);
+    },
+  );
+  return run;
+}
+
+/**
  * fetch with backoff for transport-level failures.
  *
  * Running the full suite against Nhost Cloud fires a few hundred requests in
@@ -94,6 +125,10 @@ const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
  * ordinary 4xx: a 403 from a permission check is the answer, not an error.
  */
 async function resilientFetch(url: string, options: RequestInit): Promise<Response> {
+  return paced(() => attemptFetch(url, options));
+}
+
+async function attemptFetch(url: string, options: RequestInit): Promise<Response> {
   const attempts = 5;
   let lastError: unknown;
 
