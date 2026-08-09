@@ -1,0 +1,65 @@
+# =============================================================================
+# Action type definitions.
+#
+# Note what is NOT an argument anywhere below: org_id, user_id, role. The
+# handler derives all three from the verified session and the database. If a
+# client could pass them, they would be the first thing an attacker forged.
+# =============================================================================
+
+type Mutation {
+  """
+  Start a workflow run. The caller must be an owner or editor of the
+  organization that owns the workflow. Returns immediately with a run id to
+  subscribe to; execution proceeds asynchronously via an Event Trigger.
+  """
+  triggerWorkflowRun(
+    workflow_id: uuid!
+    input: jsonb
+  ): TriggerWorkflowRunOutput!
+}
+
+type Mutation {
+  """
+  Approve a paused approval_gate step and resume the run. Authorization is
+  decided entirely by the handler at call time, because whether an approval is
+  legitimate depends on runtime state that no row-level rule can express.
+  """
+  approveStep(
+    step_run_id: uuid!
+    note: String
+  ): ApproveStepOutput!
+}
+
+type Mutation {
+  """
+  Reveal the callable URL (including its secret) for a webhook trigger.
+  Owner-only: the secret is the webhook's sole credential, so it is excluded
+  from every select permission and handed out only here.
+  """
+  getWebhookUrl(
+    trigger_id: uuid!
+  ): WebhookUrlOutput!
+}
+
+type TriggerWorkflowRunOutput {
+  run_id: uuid!
+  status: String!
+  workflow_id: uuid!
+  quota_used: Int!
+  quota_limit: Int!
+}
+
+type ApproveStepOutput {
+  step_run_id: uuid!
+  run_id: uuid!
+  approved_by: uuid!
+  approved_at: timestamptz!
+  """Status of the RUN after resumption completed: completed, failed, or paused."""
+  run_status: String!
+}
+
+type WebhookUrlOutput {
+  trigger_id: uuid!
+  url: String!
+  enabled: Boolean!
+}

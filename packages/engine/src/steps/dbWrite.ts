@@ -9,8 +9,8 @@
  * an editor cannot create this step type at all.
  */
 
-import { adminRequest } from '../lib/hasura.js';
-import { StepError, type DbWriteConfig, type StepExecutionResult } from '../types.js';
+import { adminRequest } from '../lib/hasura';
+import { StepError, type DbWriteConfig, type StepExecutionResult } from '../types';
 
 const UPSERT_OUTPUT = /* GraphQL */ `
   mutation InsertWorkflowOutput($run_id: uuid!, $key: String!, $value: jsonb!) {

@@ -6,8 +6,8 @@
  * workflow is executing, so a branch result cannot be pre-baked.
  */
 
-import type { Condition, Json } from '../types.js';
-import { resolvePath, type RunContext } from './context.js';
+import type { Condition, Json } from '../types';
+import { resolvePath, type RunContext } from './context';
 
 export interface ConditionEvaluation {
   result: boolean;

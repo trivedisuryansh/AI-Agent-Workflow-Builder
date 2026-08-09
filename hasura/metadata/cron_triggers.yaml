@@ -1,0 +1,23 @@
+# Scheduled trigger support.
+#
+# Rather than one Hasura cron per workflow (which would require metadata edits
+# at runtime and give editors a way to write metadata), a single cron sweeps
+# workflow_triggers WHERE type = 'scheduled' AND enabled = true and starts the
+# ones whose cadence is due. Adding a scheduled trigger is then an ordinary row
+# insert governed by the same Layer 1 permissions as any other trigger.
+- name: scheduled_workflow_dispatch
+  webhook: '{{ACTION_BASE_URL}}/api/events/scheduled-dispatch'
+  schedule: '*/15 * * * *'
+  include_in_metadata: true
+  payload: {}
+  headers:
+    - name: x-action-secret
+      value_from_env: ACTION_WEBHOOK_SECRET
+  retry_conf:
+    num_retries: 1
+    retry_interval_seconds: 30
+    timeout_seconds: 60
+    tolerance_seconds: 21600
+  comment: >-
+    Sweeps enabled scheduled triggers every 15 minutes. Quota is still reserved
+    per run, so a scheduled workflow cannot outrun its organization's limit.

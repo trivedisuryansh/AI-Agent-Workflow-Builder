@@ -13,7 +13,7 @@
  * anything the engine did not explicitly put in the context object.
  */
 
-import type { Json, JsonObject } from '../types.js';
+import type { Json, JsonObject } from '../types';
 
 export interface RunContext {
   /** Payload the run started with (manual input or webhook body). */

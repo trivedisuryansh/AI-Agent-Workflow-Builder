@@ -13,8 +13,8 @@
  * without Slack credentials.
  */
 
-import { adminRequest } from '../lib/hasura.js';
-import { StepError, type Json, type NotifyConfig, type StepExecutionResult } from '../types.js';
+import { adminRequest } from '../lib/hasura';
+import { StepError, type Json, type NotifyConfig, type StepExecutionResult } from '../types';
 
 const INSERT_NOTIFICATION = /* GraphQL */ `
   mutation InsertNotification(

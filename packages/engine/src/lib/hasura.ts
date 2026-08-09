@@ -15,7 +15,7 @@
  * remain the single source of truth.
  */
 
-import { config } from './env.js';
+import { config } from './env';
 
 export interface GraphQLError {
   message: string;

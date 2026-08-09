@@ -15,7 +15,7 @@
  * org_members lookup, which is the only place a role can come from.
  */
 
-import { adminRequest } from '../lib/hasura.js';
+import { adminRequest } from '../lib/hasura';
 import {
   ROLES_THAT_MAY_APPROVE,
   ROLES_THAT_MAY_EXECUTE,
@@ -23,7 +23,7 @@ import {
   type RunStatus,
   type StepRunStatus,
   type TriggerType,
-} from '../types.js';
+} from '../types';
 
 /** A failure that should surface to the client as a clean Action error. */
 export class AuthorizationError extends Error {

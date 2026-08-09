@@ -11,8 +11,8 @@
  * downstream is still branching on step output rather than on a constant.
  */
 
-import { config } from '../lib/env.js';
-import { StepError, type Json, type LlmCallConfig, type StepExecutionResult } from '../types.js';
+import { config } from '../lib/env';
+import { StepError, type Json, type LlmCallConfig, type StepExecutionResult } from '../types';
 
 interface LlmResult {
   text: string;

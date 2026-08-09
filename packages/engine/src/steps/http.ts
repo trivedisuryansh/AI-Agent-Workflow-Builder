@@ -28,8 +28,8 @@
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
 
-import { config } from '../lib/env.js';
-import { StepError, type Json, type HttpRequestConfig, type StepExecutionResult } from '../types.js';
+import { config } from '../lib/env';
+import { StepError, type Json, type HttpRequestConfig, type StepExecutionResult } from '../types';
 
 const MAX_REDIRECTS = 3;
 

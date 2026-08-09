@@ -1,0 +1,11 @@
+version: 3
+# Point at your Nhost project's Hasura endpoint. The CLI reads the admin secret
+# from HASURA_GRAPHQL_ADMIN_SECRET (see scripts/hasura-apply.mjs, which loads
+# .env.local), so no secret is committed here.
+endpoint: https://local.hasura.nhost.run
+metadata_directory: metadata
+migrations_directory: migrations
+seeds_directory: seeds
+actions:
+  kind: synchronous
+  handler_webhook_baseurl: http://localhost:3000

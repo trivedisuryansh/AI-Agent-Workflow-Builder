@@ -1,0 +1,18 @@
+# Volatile, set-returning functions exposed as GraphQL mutations.
+#
+# No `permissions` block, which means admin-only. That is deliberate: quota is
+# reserved by the triggerWorkflowRun handler using the admin client, immediately
+# after it has authorized the caller. If a `user` role could call
+# reserve_org_quota directly it could burn another member's quota, and if it
+# could call release_org_quota it could grant itself unlimited executions.
+- function:
+    schema: public
+    name: reserve_org_quota
+  configuration:
+    exposed_as: mutation
+
+- function:
+    schema: public
+    name: release_org_quota
+  configuration:
+    exposed_as: mutation

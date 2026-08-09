@@ -14,8 +14,8 @@
  * mode: 'resume'.
  */
 
-import { evaluateCondition } from './conditions.js';
-import { emptyContext, resolveTemplates, type RunContext } from './context.js';
+import { evaluateCondition } from './conditions';
+import { emptyContext, resolveTemplates, type RunContext } from './context';
 import {
   claimRunForExecution,
   loadRunBundle,
@@ -26,13 +26,13 @@ import {
   updateRun,
   upsertStepRun,
   type RunBundle,
-} from './repository.js';
-import { resolvePolicy, withRetry } from './retry.js';
-import { executeDbWrite } from '../steps/dbWrite.js';
-import { executeHttpRequest } from '../steps/http.js';
-import { executeLlmCall } from '../steps/llm.js';
-import { executeNotify } from '../steps/notify.js';
-import { config } from '../lib/env.js';
+} from './repository';
+import { resolvePolicy, withRetry } from './retry';
+import { executeDbWrite } from '../steps/dbWrite';
+import { executeHttpRequest } from '../steps/http';
+import { executeLlmCall } from '../steps/llm';
+import { executeNotify } from '../steps/notify';
+import { config } from '../lib/env';
 import {
   StepError,
   type BranchTarget,
@@ -41,7 +41,7 @@ import {
   type JsonObject,
   type StepExecutionResult,
   type WorkflowStepRow,
-} from '../types.js';
+} from '../types';
 
 export type ExecutionMode = 'start' | 'resume';
 
@@ -123,16 +123,16 @@ async function runStepBody(
 ): Promise<StepExecutionResult> {
   switch (step.type) {
     case 'llm_call': {
-      const cfg = resolvedConfig as never as import('../types.js').LlmCallConfig;
+      const cfg = resolvedConfig as never as import('../types').LlmCallConfig;
       return executeLlmCall(cfg, String(cfg.prompt ?? ''));
     }
     case 'http_request':
-      return executeHttpRequest(resolvedConfig as never as import('../types.js').HttpRequestConfig);
+      return executeHttpRequest(resolvedConfig as never as import('../types').HttpRequestConfig);
     case 'db_write':
-      return executeDbWrite(resolvedConfig as never as import('../types.js').DbWriteConfig, runId);
+      return executeDbWrite(resolvedConfig as never as import('../types').DbWriteConfig, runId);
     case 'notify':
       return executeNotify(
-        resolvedConfig as never as import('../types.js').NotifyConfig,
+        resolvedConfig as never as import('../types').NotifyConfig,
         runId,
         stepRunId,
       );

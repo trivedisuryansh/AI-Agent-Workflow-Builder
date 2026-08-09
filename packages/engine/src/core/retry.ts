@@ -11,7 +11,7 @@
  * step_runs.attempt_count after every try, including the ones that failed.
  */
 
-import { StepError } from '../types.js';
+import { StepError } from '../types';
 
 export interface RetryPolicy {
   maxAttempts: number;

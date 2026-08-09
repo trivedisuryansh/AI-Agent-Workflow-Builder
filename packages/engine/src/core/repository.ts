@@ -7,14 +7,14 @@
  * webhook secret validation. See core/authz.ts.
  */
 
-import { adminRequest } from '../lib/hasura.js';
+import { adminRequest } from '../lib/hasura';
 import type {
   Json,
   StepRunRow,
   StepRunStatus,
   WorkflowRunRow,
   WorkflowStepRow,
-} from '../types.js';
+} from '../types';
 
 export interface RunBundle {
   run: WorkflowRunRow & { workflow: { id: string; name: string; org_id: string } };

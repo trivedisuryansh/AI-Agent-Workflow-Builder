@@ -1,0 +1,55 @@
+actions:
+  - name: triggerWorkflowRun
+    definition:
+      kind: synchronous
+      handler: '{{ACTION_BASE_URL}}/api/actions/trigger-workflow-run'
+      forward_client_headers: false
+      headers:
+        - name: x-action-secret
+          value_from_env: ACTION_WEBHOOK_SECRET
+      timeout: 30
+    permissions:
+      # Only the `user` role. Note this grants permission to CALL the action;
+      # whether this particular user may run this particular workflow is decided
+      # inside the handler against org_members.
+      - role: user
+    comment: >-
+      Creates a workflow_run after authorizing the caller and atomically
+      reserving quota. Execution is kicked off by the Event Trigger on insert.
+
+  - name: approveStep
+    definition:
+      kind: synchronous
+      handler: '{{ACTION_BASE_URL}}/api/actions/approve-step'
+      forward_client_headers: false
+      headers:
+        - name: x-action-secret
+          value_from_env: ACTION_WEBHOOK_SECRET
+      timeout: 60
+    permissions:
+      - role: user
+    comment: >-
+      Approves a paused approval_gate and resumes execution of the remaining
+      steps. Runtime authorization; never expressible as an update permission.
+
+  - name: getWebhookUrl
+    definition:
+      kind: synchronous
+      handler: '{{ACTION_BASE_URL}}/api/actions/get-webhook-url'
+      forward_client_headers: false
+      headers:
+        - name: x-action-secret
+          value_from_env: ACTION_WEBHOOK_SECRET
+      timeout: 15
+    permissions:
+      - role: user
+    comment: Owner-only retrieval of a webhook trigger's secret URL.
+
+custom_types:
+  enums: []
+  input_objects: []
+  objects:
+    - name: TriggerWorkflowRunOutput
+    - name: ApproveStepOutput
+    - name: WebhookUrlOutput
+  scalars: []
