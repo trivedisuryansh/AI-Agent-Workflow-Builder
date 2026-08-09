@@ -1,0 +1,30 @@
+{
+  "name": "ai-agent-workflow-builder",
+  "version": "1.0.0",
+  "private": true,
+  "description": "n8n-style AI agent workflow builder on Nhost + Hasura + PostgreSQL with two-layer organization authorization",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "npm run build --workspace @wfb/engine && npm run build --workspace @wfb/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "npm run lint --workspace @wfb/web",
+    "dev": "npm run dev --workspace @wfb/web",
+    "test": "vitest run --config tests/vitest.config.ts",
+    "test:unit": "vitest run --config tests/vitest.config.ts tests/unit",
+    "test:integration": "vitest run --config tests/vitest.config.ts tests/integration",
+    "db:validate": "node scripts/run-sql-proofs.mjs",
+    "hasura:apply": "node scripts/hasura-apply.mjs",
+    "seed": "node --experimental-strip-types scripts/seed.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

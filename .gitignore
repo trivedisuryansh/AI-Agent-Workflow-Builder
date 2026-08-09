@@ -1,0 +1,21 @@
+node_modules/
+dist/
+build/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+
+# secrets — only .env.example is committed
+.env
+.env.local
+.env.*.local
+!.env.example
+
+.vercel/
+.nhost/
+.DS_Store
+Thumbs.db
+*.log
+.vitest/
+tests/.artifacts/
