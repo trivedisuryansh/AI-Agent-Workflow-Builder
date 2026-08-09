@@ -18,12 +18,13 @@
     "test": "vitest run --config tests/vitest.config.ts",
     "test:unit": "vitest run --config tests/vitest.config.ts tests/unit",
     "test:integration": "vitest run --config tests/vitest.config.ts tests/integration",
-    "db:validate": "node scripts/run-sql-proofs.mjs",
+    "db:validate": "node scripts/validate-metadata.mjs",
     "hasura:apply": "node scripts/hasura-apply.mjs",
-    "seed": "node --experimental-strip-types scripts/seed.ts"
+    "seed": "node scripts/seed.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
+    "graphql-ws": "^6.2.1",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8",
     "yaml": "^2.9.0"
