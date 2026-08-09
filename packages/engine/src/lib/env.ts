@@ -44,6 +44,9 @@ export const config = {
   llmApiKey: () => optional('LLM_API_KEY'),
   llmModel: () => optional('LLM_MODEL', 'llama-3.3-70b-versatile'),
   llmTimeoutMs: () => intEnv('LLM_TIMEOUT_MS', 30_000),
+  // Local models are slower than a hosted API; the default timeout above is
+  // generous enough, but this stays overridable for larger models.
+  ollamaBaseUrl: () => optional('OLLAMA_BASE_URL', 'http://localhost:11434/v1'),
 
   httpTimeoutMs: () => intEnv('HTTP_STEP_TIMEOUT_MS', 10_000),
   httpMaxResponseBytes: () => intEnv('HTTP_STEP_MAX_RESPONSE_BYTES', 262_144),

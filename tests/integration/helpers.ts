@@ -46,13 +46,18 @@ function env(name: string, fallback?: string): string {
   throw new Error(`Integration tests need ${name}. See .env.example.`);
 }
 
-export const SUBDOMAIN = env('NEXT_PUBLIC_NHOST_SUBDOMAIN');
-export const REGION = env('NEXT_PUBLIC_NHOST_REGION');
-export const AUTH_URL = `https://${SUBDOMAIN}.auth.${REGION}.nhost.run/v1`;
-export const GRAPHQL_URL = env(
-  'HASURA_GRAPHQL_ENDPOINT',
-  `https://${SUBDOMAIN}.hasura.${REGION}.nhost.run/v1/graphql`,
-);
+/** Overrides target the local docker-compose stack; otherwise Nhost Cloud. */
+const AUTH_OVERRIDE = process.env.NEXT_PUBLIC_NHOST_AUTH_URL?.trim();
+const GQL_OVERRIDE =
+  process.env.HASURA_GRAPHQL_ENDPOINT?.trim() || process.env.NEXT_PUBLIC_NHOST_GRAPHQL_URL?.trim();
+
+export const AUTH_URL =
+  AUTH_OVERRIDE?.replace(/\/+$/, '') ??
+  `https://${env('NEXT_PUBLIC_NHOST_SUBDOMAIN')}.auth.${env('NEXT_PUBLIC_NHOST_REGION')}.nhost.run/v1`;
+
+export const GRAPHQL_URL =
+  GQL_OVERRIDE ??
+  `https://${env('NEXT_PUBLIC_NHOST_SUBDOMAIN')}.hasura.${env('NEXT_PUBLIC_NHOST_REGION')}.nhost.run/v1/graphql`;
 export const WS_URL = GRAPHQL_URL.replace(/^http/, 'ws');
 export const ADMIN_SECRET = env('HASURA_GRAPHQL_ADMIN_SECRET');
 export const APP_BASE_URL = env('APP_BASE_URL', 'http://localhost:3000');

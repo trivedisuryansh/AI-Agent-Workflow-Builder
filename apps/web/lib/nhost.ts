@@ -33,9 +33,23 @@ export interface NhostSession {
 
 const STORAGE_KEY = 'wfb.session';
 
+/**
+ * URL resolution.
+ *
+ * Nhost Cloud URLs are derived from subdomain + region. The explicit overrides
+ * exist so the identical code can point at the local docker-compose stack
+ * (Postgres + Hasura + Nhost's own hasura-auth image), where the services are
+ * on localhost ports rather than *.nhost.run. Overrides win when present.
+ */
 function subdomain(): string {
   const v = process.env.NEXT_PUBLIC_NHOST_SUBDOMAIN;
-  if (!v) throw new Error('NEXT_PUBLIC_NHOST_SUBDOMAIN is not set. Copy .env.example to .env.local.');
+  if (!v) {
+    throw new Error(
+      'Set NEXT_PUBLIC_NHOST_SUBDOMAIN and NEXT_PUBLIC_NHOST_REGION (Nhost Cloud), ' +
+        'or NEXT_PUBLIC_NHOST_AUTH_URL and NEXT_PUBLIC_NHOST_GRAPHQL_URL (local stack). ' +
+        'Copy .env.example to .env.local.',
+    );
+  }
   return v;
 }
 
@@ -46,15 +60,20 @@ function region(): string {
 }
 
 export function authUrl(): string {
+  const override = process.env.NEXT_PUBLIC_NHOST_AUTH_URL;
+  if (override) return override.replace(/\/+$/, '');
   return `https://${subdomain()}.auth.${region()}.nhost.run/v1`;
 }
 
 export function graphqlHttpUrl(): string {
+  const override = process.env.NEXT_PUBLIC_NHOST_GRAPHQL_URL;
+  if (override) return override;
   return `https://${subdomain()}.hasura.${region()}.nhost.run/v1/graphql`;
 }
 
 export function graphqlWsUrl(): string {
-  return `wss://${subdomain()}.hasura.${region()}.nhost.run/v1/graphql`;
+  // Same origin as the HTTP endpoint, so http->ws and https->wss.
+  return graphqlHttpUrl().replace(/^http/, 'ws');
 }
 
 // -----------------------------------------------------------------------------

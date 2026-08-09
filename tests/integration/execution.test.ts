@@ -414,7 +414,7 @@ describe('retry on a failing external call', () => {
         config: {
           method: 'GET',
           // 500 is transient by policy, so it must be retried.
-          url: 'https://httpbin.org/status/500',
+          url: 'https://httpbingo.org/status/500',
           max_attempts: 2,
           base_delay_ms: 200,
           timeout_ms: 10000,
@@ -473,7 +473,7 @@ describe('retry on a failing external call', () => {
         wf: wfId,
         config: {
           method: 'GET',
-          url: 'https://httpbin.org/status/404',
+          url: 'https://httpbingo.org/status/404',
           max_attempts: 3,
           base_delay_ms: 100,
           timeout_ms: 10000,

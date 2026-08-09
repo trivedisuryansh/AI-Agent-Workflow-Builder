@@ -122,7 +122,7 @@ export function defaultConfigFor(type: StepType): Record<string, unknown> {
     case 'http_request':
       return {
         method: 'GET',
-        url: 'https://httpbin.org/json',
+        url: 'https://httpbingo.org/uuid',
         timeout_ms: 10000,
         max_attempts: 2,
       };

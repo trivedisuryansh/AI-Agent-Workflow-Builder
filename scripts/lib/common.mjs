@@ -49,14 +49,32 @@ export function need(name) {
   return v.trim();
 }
 
+/**
+ * Resolve service URLs for either target.
+ *
+ * Explicit overrides (used by the local docker-compose stack) win; otherwise
+ * the Nhost Cloud convention of subdomain + region applies.
+ */
 export function nhostUrls() {
+  const authOverride = process.env.NEXT_PUBLIC_NHOST_AUTH_URL?.trim();
+  const gqlOverride =
+    process.env.HASURA_GRAPHQL_ENDPOINT?.trim() ||
+    process.env.NEXT_PUBLIC_NHOST_GRAPHQL_URL?.trim();
+
+  if (authOverride && gqlOverride) {
+    return {
+      auth: authOverride.replace(/\/+$/, ''),
+      graphql: gqlOverride,
+      // Strip the /v1/graphql suffix to get the base the Hasura CLI wants.
+      hasuraBase: gqlOverride.replace(/\/v1\/graphql\/?$/, ''),
+    };
+  }
+
   const sub = need('NEXT_PUBLIC_NHOST_SUBDOMAIN');
   const region = need('NEXT_PUBLIC_NHOST_REGION');
   return {
-    auth: `https://${sub}.auth.${region}.nhost.run/v1`,
-    graphql:
-      process.env.HASURA_GRAPHQL_ENDPOINT?.trim() ||
-      `https://${sub}.hasura.${region}.nhost.run/v1/graphql`,
+    auth: authOverride || `https://${sub}.auth.${region}.nhost.run/v1`,
+    graphql: gqlOverride || `https://${sub}.hasura.${region}.nhost.run/v1/graphql`,
     hasuraBase: `https://${sub}.hasura.${region}.nhost.run`,
   };
 }

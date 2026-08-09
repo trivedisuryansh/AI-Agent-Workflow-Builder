@@ -19,11 +19,13 @@ need('HASURA_GRAPHQL_ADMIN_SECRET');
 
 const password = process.env.SEED_PASSWORD?.trim() || 'Passw0rd!seed';
 
+// NOTE: hasura-auth validates displayName and rejects some punctuation —
+// parentheses produce a bare HTTP 400 with an empty body. Keep these plain.
 const PEOPLE = [
-  { key: 'ownerA',  email: process.env.TEST_ORG_A_OWNER_EMAIL  || 'owner.a@example.test',  name: 'Ada Owner (Org A)',   org: 'A', role: 'owner'  },
-  { key: 'editorA', email: process.env.TEST_ORG_A_EDITOR_EMAIL || 'editor.a@example.test', name: 'Eli Editor (Org A)',  org: 'A', role: 'editor' },
-  { key: 'viewerA', email: process.env.TEST_ORG_A_VIEWER_EMAIL || 'viewer.a@example.test', name: 'Vic Viewer (Org A)',  org: 'A', role: 'viewer' },
-  { key: 'ownerB',  email: process.env.TEST_ORG_B_OWNER_EMAIL  || 'owner.b@example.test',  name: 'Bo Owner (Org B)',    org: 'B', role: 'owner'  },
+  { key: 'ownerA',  email: process.env.TEST_ORG_A_OWNER_EMAIL  || 'owner.a@example.test',  name: 'Ada Owner - Org A',   org: 'A', role: 'owner'  },
+  { key: 'editorA', email: process.env.TEST_ORG_A_EDITOR_EMAIL || 'editor.a@example.test', name: 'Eli Editor - Org A',  org: 'A', role: 'editor' },
+  { key: 'viewerA', email: process.env.TEST_ORG_A_VIEWER_EMAIL || 'viewer.a@example.test', name: 'Vic Viewer - Org A',  org: 'A', role: 'viewer' },
+  { key: 'ownerB',  email: process.env.TEST_ORG_B_OWNER_EMAIL  || 'owner.b@example.test',  name: 'Bo Owner - Org B',    org: 'B', role: 'owner'  },
 ];
 
 const UPSERT_ORG = /* GraphQL */ `
@@ -141,17 +143,32 @@ function demoSteps(workflowId, ownerId) {
       type: 'llm_call',
       name: 'Classify support ticket',
       config: {
+        // Deliberately strict. A small local model (llama3.2 3B) will happily
+        // invent labels like "high_priority" from a loose prompt, and the
+        // branch compares against an exact string. Enumerating the permitted
+        // values, forbidding invention, and showing two examples was measured
+        // to give the correct label on every test ticket.
         system_prompt:
-          'You trage customer support tickets. Reply with ONLY a JSON object, no prose, ' +
-          'in the form {"label":"needs_approval"|"auto_resolve","confidence":0.0-1.0,"reason":"short reason"}. ' +
-          'Use "needs_approval" when the ticket involves refunds, outages, cancellations, legal threats, ' +
-          'or an angry customer. Otherwise use "auto_resolve".',
+          'You are a strict classifier. You output ONLY a JSON object and nothing else.\n' +
+          'The JSON MUST have exactly these three keys: "label", "confidence", "reason".\n' +
+          '"label" MUST be exactly one of these two strings, copied character for character:\n' +
+          '  "needs_approval"\n' +
+          '  "auto_resolve"\n' +
+          'No other value for "label" is permitted. Do not invent labels such as "high_priority".\n' +
+          'Use "needs_approval" when the ticket mentions refunds, money back, outages, service being ' +
+          'down, cancellations, legal threats, or an angry customer.\n' +
+          'Use "auto_resolve" for everything else, such as how-to questions and simple account changes.\n' +
+          '"confidence" is a number between 0 and 1. "reason" is a short string under 15 words.\n\n' +
+          'Example input: The site is down and I demand a refund.\n' +
+          'Example output: {"label":"needs_approval","confidence":0.95,"reason":"outage and refund request"}\n\n' +
+          'Example input: How do I change my profile picture?\n' +
+          'Example output: {"label":"auto_resolve","confidence":0.9,"reason":"simple how-to question"}',
         prompt:
           'Classify this support ticket:\n\n{{trigger.body.text}}\n\n' +
           'Respond with the JSON object only.',
         parse_json: true,
         temperature: 0,
-        max_tokens: 200,
+        max_tokens: 2048,
         max_attempts: 2,
       },
     },
@@ -165,7 +182,7 @@ function demoSteps(workflowId, ownerId) {
         method: 'GET',
         // Public, dependency-free, and returns JSON. Deliberately NOT a private
         // address — the SSRF guard would refuse one.
-        url: 'https://httpbin.org/uuid',
+        url: 'https://httpbingo.org/uuid',
         timeout_ms: 10000,
         max_attempts: 2,
         base_delay_ms: 500,

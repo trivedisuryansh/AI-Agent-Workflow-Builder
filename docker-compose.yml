@@ -1,0 +1,107 @@
+# =============================================================================
+# Local Nhost-equivalent backend.
+#
+# Nhost Cloud is PostgreSQL + Hasura + hasura-auth. This runs those same three
+# components locally, including Nhost's own `hasura-auth` image — so the JWT
+# claims (x-hasura-user-id, x-hasura-default-role) and the auth REST API are
+# identical to the hosted product, not an approximation.
+#
+# The same migrations and metadata apply to both. Moving to Nhost Cloud later is
+# a change of endpoint and secret, not a change of code.
+#
+#   docker compose up -d
+#   npm run hasura:apply
+#   npm run seed
+#
+# Ports: Postgres 5434 (5433 avoided — a local Postgres already uses it),
+#        Hasura 8080, Auth 4000.
+# =============================================================================
+
+name: wfb
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    ports:
+      - '5434:5432'
+    volumes:
+      - wfb_pgdata:/var/lib/postgresql/data
+      # Creates the `auth` schema and extensions that Nhost's own Postgres image
+      # ships with. Runs only on first initialisation of the volume.
+      - ./docker/postgres-init.sql:/docker-entrypoint-initdb.d/00-init.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Starts BEFORE the schema migration is applied, because it owns the `auth`
+  # schema that public.org_members and friends have foreign keys into.
+  auth:
+    image: nhost/hasura-auth:0.38.1
+    restart: unless-stopped
+    # Only Postgres is a hard dependency; hasura-auth retries its GraphQL
+    # connection on its own, so gating on a Hasura healthcheck would just add a
+    # failure mode.
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      HASURA_GRAPHQL_DATABASE_URL: postgres://postgres:postgres@postgres:5432/postgres
+      HASURA_GRAPHQL_GRAPHQL_URL: http://hasura:8080/v1/graphql
+      HASURA_GRAPHQL_ADMIN_SECRET: ${HASURA_GRAPHQL_ADMIN_SECRET:-wfb-local-admin-secret}
+      HASURA_GRAPHQL_JWT_SECRET: '{"type":"HS256","key":"${JWT_KEY:-wfb-local-jwt-key-please-change-me-at-least-32-chars}"}'
+      AUTH_HOST: 0.0.0.0
+      AUTH_PORT: 4000
+      AUTH_SERVER_URL: http://localhost:4000/v1
+      # Nhost Cloud fronts this service with a proxy that adds /v1; locally the
+      # container serves at the root. Setting the prefix makes both targets
+      # expose the identical URL shape, so no client-side branching is needed.
+      AUTH_API_PREFIX: /v1
+      AUTH_CLIENT_URL: http://localhost:3000
+      # No SMTP locally, so verification is off. Nhost Cloud defaults it ON —
+      # turn it off there too, or the seeded users cannot sign in.
+      AUTH_EMAIL_SIGNIN_EMAIL_VERIFIED_REQUIRED: 'false'
+      AUTH_DISABLE_NEW_USERS: 'false'
+      AUTH_USER_DEFAULT_ROLE: user
+      AUTH_USER_DEFAULT_ALLOWED_ROLES: user,me
+      AUTH_ACCESS_TOKEN_EXPIRES_IN: '900'
+      AUTH_REFRESH_TOKEN_EXPIRES_IN: '2592000'
+      AUTH_PASSWORD_MIN_LENGTH: '8'
+    ports:
+      - '4000:4000'
+
+  hasura:
+    image: hasura/graphql-engine:v2.50.0
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      HASURA_GRAPHQL_DATABASE_URL: postgres://postgres:postgres@postgres:5432/postgres
+      HASURA_GRAPHQL_METADATA_DATABASE_URL: postgres://postgres:postgres@postgres:5432/postgres
+      HASURA_GRAPHQL_ADMIN_SECRET: ${HASURA_GRAPHQL_ADMIN_SECRET:-wfb-local-admin-secret}
+      HASURA_GRAPHQL_JWT_SECRET: '{"type":"HS256","key":"${JWT_KEY:-wfb-local-jwt-key-please-change-me-at-least-32-chars}"}'
+      HASURA_GRAPHQL_ENABLE_CONSOLE: 'true'
+      HASURA_GRAPHQL_DEV_MODE: 'true'
+      HASURA_GRAPHQL_ENABLED_LOG_TYPES: startup,http-log,webhook-log,websocket-log,query-log
+      HASURA_GRAPHQL_UNAUTHORIZED_ROLE: public
+
+      # Substituted into the committed metadata's {{ACTION_BASE_URL}}.
+      # host.docker.internal is how the container reaches the Next.js app
+      # running on the host — the local equivalent of pointing Nhost Cloud at a
+      # tunnel URL.
+      ACTION_BASE_URL: ${ACTION_BASE_URL_DOCKER:-http://host.docker.internal:3000}
+      ACTION_WEBHOOK_SECRET: ${ACTION_WEBHOOK_SECRET:-wfb-local-action-secret}
+    ports:
+      - '8080:8080'
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+
+volumes:
+  wfb_pgdata:

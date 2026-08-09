@@ -84,9 +84,13 @@ async function callOpenAiCompatible(
   if (cfg.system_prompt) messages.push({ role: 'system', content: cfg.system_prompt });
   messages.push({ role: 'user', content: prompt });
 
+  const apiKey = config.llmApiKey();
+
   const data = (await postJson(
     `${baseUrl}/chat/completions`,
-    { authorization: `Bearer ${config.llmApiKey()}` },
+    // Ollama needs no credential and ignores the header; sending an empty
+    // Bearer to a hosted provider would be a confusing 401, so omit it.
+    apiKey ? { authorization: `Bearer ${apiKey}` } : {},
     {
       model,
       messages,
@@ -97,13 +101,24 @@ async function callOpenAiCompatible(
     config.llmTimeoutMs(),
     provider,
   )) as {
-    choices?: Array<{ message?: { content?: string } }>;
+    choices?: Array<{ message?: { content?: string }; finish_reason?: string }>;
     usage?: LlmResult['usage'];
   };
 
-  const text = data.choices?.[0]?.message?.content;
+  const choice = data.choices?.[0];
+  const text = choice?.message?.content;
   if (typeof text !== 'string') {
     throw new StepError(`${provider} response contained no message content`, { permanent: false });
+  }
+
+  // A truncated completion is worse than no completion: it parses as "no JSON",
+  // which would silently send a conditional_branch down the wrong path. Fail loudly.
+  if (choice?.finish_reason === 'length') {
+    throw new StepError(
+      `${provider} hit the token limit and returned a truncated completion ` +
+        `(max_tokens=${cfg.max_tokens ?? 512}). Raise max_tokens on this step.`,
+      { permanent: true, details: { finish_reason: 'length' } },
+    );
   }
 
   return {
@@ -132,20 +147,49 @@ async function callGemini(cfg: LlmCallConfig, prompt: string): Promise<LlmResult
         : {}),
       generationConfig: {
         temperature: cfg.temperature ?? 0.2,
-        maxOutputTokens: cfg.max_tokens ?? 512,
+        // Gemini's thinking models bill reasoning tokens against this budget,
+        // and they routinely spend 100-200 before emitting a single character.
+        // A 512 default silently truncates a short JSON answer, so the floor
+        // here is deliberately generous. (thinkingBudget: 0 is rejected
+        // outright by the *-flash-latest thinking models, so it is not an
+        // option — measured, not assumed.)
+        maxOutputTokens: cfg.max_tokens ?? 2048,
         ...(cfg.parse_json ? { responseMimeType: 'application/json' } : {}),
       },
     },
     config.llmTimeoutMs(),
     'gemini',
   )) as {
-    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-    usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number; totalTokenCount?: number };
+    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> }; finishReason?: string }>;
+    usageMetadata?: {
+      promptTokenCount?: number;
+      candidatesTokenCount?: number;
+      totalTokenCount?: number;
+      thoughtsTokenCount?: number;
+    };
   };
 
-  const text = data.candidates?.[0]?.content?.parts?.map((p) => p.text ?? '').join('');
+  const candidate = data.candidates?.[0];
+  const text = candidate?.content?.parts?.map((p) => p.text ?? '').join('');
+
+  // Checked BEFORE the empty-text check: when thinking consumes the whole
+  // budget the text is empty *because* it was truncated, and reporting that as
+  // "no candidate text" would hide the real cause.
+  if (candidate?.finishReason === 'MAX_TOKENS') {
+    throw new StepError(
+      `gemini hit the token limit and returned a truncated completion ` +
+        `(maxOutputTokens=${cfg.max_tokens ?? 2048}, of which ` +
+        `${data.usageMetadata?.thoughtsTokenCount ?? 0} were spent on internal reasoning). ` +
+        'Raise max_tokens on this step.',
+      { permanent: true, details: { finishReason: 'MAX_TOKENS' } },
+    );
+  }
+
   if (!text) {
-    throw new StepError('gemini response contained no candidate text', { permanent: false });
+    throw new StepError(
+      `gemini response contained no candidate text (finishReason=${candidate?.finishReason ?? 'unknown'})`,
+      { permanent: false },
+    );
   }
 
   return {
@@ -194,6 +238,16 @@ function stubCompletion(cfg: LlmCallConfig, prompt: string): LlmResult {
   };
 }
 
+/**
+ * Providers that need no API key.
+ *
+ * Ollama runs the model on the machine itself and its OpenAI-compatible
+ * endpoint ignores the Authorization header. It is a REAL model performing real
+ * inference — not the stub — so a workflow branching on its output is branching
+ * on genuine model behaviour.
+ */
+const KEYLESS_PROVIDERS = new Set(['ollama']);
+
 export async function executeLlmCall(
   rawConfig: LlmCallConfig,
   resolvedPrompt: string,
@@ -205,13 +259,15 @@ export async function executeLlmCall(
   }
 
   const provider = (rawConfig.provider ?? config.llmProvider()).toLowerCase();
+  const needsKey = !KEYLESS_PROVIDERS.has(provider);
   const hasKey = config.llmApiKey() !== '';
 
   let result: LlmResult;
-  if (!hasKey) {
+  if (needsKey && !hasKey) {
     console.warn(
-      '[llm_call] LLM_API_KEY is not set — using the disclosed offline stub. ' +
-        'Output is marked { "stubbed": true }.',
+      `[llm_call] LLM_API_KEY is not set for provider "${provider}" — using the disclosed ` +
+        'offline stub. Output is marked { "stubbed": true }. Set a key, or use ' +
+        'LLM_PROVIDER=ollama to run a real local model instead.',
     );
     result = stubCompletion(rawConfig, resolvedPrompt);
   } else {
@@ -222,12 +278,15 @@ export async function executeLlmCall(
       case 'openrouter':
         result = await callOpenAiCompatible(rawConfig, resolvedPrompt, 'https://openrouter.ai/api/v1', 'openrouter');
         break;
+      case 'ollama':
+        result = await callOpenAiCompatible(rawConfig, resolvedPrompt, config.ollamaBaseUrl(), 'ollama');
+        break;
       case 'gemini':
         result = await callGemini(rawConfig, resolvedPrompt);
         break;
       default:
         throw new StepError(
-          `Unsupported LLM provider "${provider}". Use groq, openrouter, or gemini.`,
+          `Unsupported LLM provider "${provider}". Use groq, openrouter, gemini, or ollama.`,
           { permanent: true },
         );
     }
