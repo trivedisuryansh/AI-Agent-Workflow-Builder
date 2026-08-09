@@ -7,9 +7,30 @@ public base URL to call back into.
 Current state of the Nhost project `vguruqkdjttgihjhmuxd` (region `ap-south-1`):
 
 - [x] Migrations applied — all 11 tables, functions, triggers and the usage view
-- [ ] Metadata applied — blocked on the two environment variables below
-- [ ] Seeded
-- [ ] Handlers deployed
+- [x] Metadata applied and reported **consistent** — 27 tables tracked
+      (16 Nhost-owned in `auth`/`storage` preserved + 11 ours), 3 Actions,
+      2 Event Triggers, 1 cron
+- [x] Seeded — Org A (owner/editor/viewer), Org B (no Org A membership), the
+      6-step demo workflow, and manual + webhook triggers
+- [ ] Handlers deployed to a permanent host
+
+Handlers were verified against Cloud through a temporary tunnel, which is how
+Nhost's cron trigger was observed calling
+`POST /api/events/scheduled-dispatch → 200`. **That tunnel is not a submission
+artifact** — it dies with the session. The remaining work is deploying the
+Next.js app somewhere permanent and re-pointing `ACTION_BASE_URL` at it.
+
+Because the tunnel URL and shared secret were inlined into the metadata (see
+`--action-base-url` / `--action-secret`), the metadata currently on Cloud holds
+a literal URL and a cleartext secret. Once the app is deployed and both
+variables exist in the Nhost project environment, re-run the merge **without**
+those two flags to restore the environment-reference form:
+
+```bash
+node scripts/hasura-merge-metadata.mjs \
+  --target=https://vguruqkdjttgihjhmuxd.hasura.ap-south-1.nhost.run \
+  --target-secret=<admin secret>
+```
 
 ---
 
