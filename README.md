@@ -20,6 +20,7 @@ and asserts it gets nothing.
 
 ## Contents
 
+- [Try it in five minutes](#try-it-in-five-minutes)
 - [Architecture](#architecture)
 - [Local setup](#local-setup)
 - [Environment variables](#environment-variables)
@@ -36,6 +37,38 @@ and asserts it gets nothing.
 - [Repository layout](#repository-layout)
 - [Deployment](#deployment)
 - [Known limitations](#known-limitations)
+
+---
+
+## Try it in five minutes
+
+You do not need an Nhost account to run this. `docker compose` brings up the
+same three components Nhost Cloud is made of — PostgreSQL, Hasura, and Nhost's
+own `hasura-auth` image — so JWT claims and the auth API are identical rather
+than approximated. The same migrations and metadata apply to both.
+
+```bash
+git clone <this-repo> && cd ai-agent-workflow-builder
+npm install
+cp .env.example .env.local        # fill in LLM_API_KEY, or use LLM_PROVIDER=ollama
+
+docker compose up -d              # Postgres + Hasura + hasura-auth
+npm run hasura:apply              # migrations + metadata
+npm run seed                      # 2 orgs, 4 users, the demo workflow
+npm run dev                       # http://localhost:3000
+```
+
+Sign in with the one-click **Org A — Owner** button, press **Run workflow**, and
+watch it pause at the approval gate. Then sign in as **Org B — Owner** and
+confirm Org A is genuinely unreachable.
+
+For the full narrated walkthrough, including the direct-GraphQL attacks, see
+[`docs/demo-script.md`](docs/demo-script.md). For deploying to Nhost Cloud plus
+a host for the handlers, see [`docs/deployment.md`](docs/deployment.md).
+
+No LLM key? Set `LLM_PROVIDER=ollama` and `LLM_MODEL=llama3.2` to run a real
+local model with no account at all. The disclosed stub is the last resort, not
+the default.
 
 ---
 
