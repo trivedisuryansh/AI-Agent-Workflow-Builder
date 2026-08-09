@@ -78,13 +78,59 @@ export interface Actor {
   accessToken: string;
 }
 
+const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * fetch with backoff for transport-level failures.
+ *
+ * Running the full suite against Nhost Cloud fires a few hundred requests in
+ * under a minute, which trips its edge rate limiting. That surfaces as
+ * UND_ERR_SOCKET — TLS completes, then the connection closes with zero bytes
+ * read — rather than as an HTTP status, so it looks like a hard failure and
+ * fails the whole file at import time.
+ *
+ * Retrying here rather than in each test keeps the assertions about
+ * authorization, not about flakiness. Note this deliberately does NOT retry
+ * ordinary 4xx: a 403 from a permission check is the answer, not an error.
+ */
+async function resilientFetch(url: string, options: RequestInit): Promise<Response> {
+  const attempts = 5;
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      const res = await fetch(url, { ...options, signal: AbortSignal.timeout(45_000) });
+      if ((res.status === 429 || res.status === 503) && attempt < attempts) {
+        await pause(2000 * 2 ** (attempt - 1));
+        continue;
+      }
+      return res;
+    } catch (err) {
+      lastError = err;
+      const code =
+        (err as { cause?: { code?: string } })?.cause?.code ?? (err as Error)?.name;
+      const transient = ['UND_ERR_SOCKET', 'ECONNRESET', 'ETIMEDOUT', 'TimeoutError'].includes(
+        String(code),
+      );
+      if (!transient || attempt === attempts) break;
+      await pause(2000 * 2 ** (attempt - 1));
+    }
+  }
+
+  const code = (lastError as { cause?: { code?: string } })?.cause?.code ?? String(lastError);
+  throw new Error(
+    `Request to ${url} failed after ${attempts} attempts (${code}). ` +
+      'Nhost rate-limits request bursts; waiting a minute usually clears it.',
+  );
+}
+
 export interface GqlResult<T> {
   data?: T;
   errors?: Array<{ message: string; extensions?: { code?: string } }>;
 }
 
 export async function signIn(label: string, email: string): Promise<Actor> {
-  const res = await fetch(`${AUTH_URL}/signin/email-password`, {
+  const res = await resilientFetch(`${AUTH_URL}/signin/email-password`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ email, password: SEED_PASSWORD }),
@@ -107,7 +153,7 @@ export async function asUser<T>(
   query: string,
   variables: Record<string, unknown> = {},
 ): Promise<GqlResult<T>> {
-  const res = await fetch(GRAPHQL_URL, {
+  const res = await resilientFetch(GRAPHQL_URL, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
@@ -137,7 +183,7 @@ export async function asAdmin<T>(
   query: string,
   variables: Record<string, unknown> = {},
 ): Promise<T> {
-  const res = await fetch(GRAPHQL_URL, {
+  const res = await resilientFetch(GRAPHQL_URL, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-hasura-admin-secret': ADMIN_SECRET },
     body: JSON.stringify({ query, variables }),
