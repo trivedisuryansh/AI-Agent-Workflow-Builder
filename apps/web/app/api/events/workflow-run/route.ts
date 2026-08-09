@@ -24,7 +24,12 @@ import {
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 120;
+// 60s is the ceiling on Vercel's Hobby tier, and higher values fail the deploy
+// rather than being clamped. A full run of the demo workflow is ~6s (one LLM
+// call plus one HTTP call), so this is not a real constraint. If a workflow
+// ever needs longer, the right fix is splitting execution across event
+// deliveries rather than raising this.
+export const maxDuration = 60;
 
 interface WorkflowRunRow {
   id: string;
