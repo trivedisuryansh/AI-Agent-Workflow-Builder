@@ -79,10 +79,51 @@ export function nhostUrls() {
   };
 }
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * fetch with backoff for transport-level failures.
+ *
+ * Nhost's edge rate-limits: after a burst it completes the TLS handshake and
+ * then closes the connection with zero bytes read, which surfaces as
+ * UND_ERR_SOCKET rather than an HTTP status. Seeding fires enough requests in
+ * quick succession to trip it, so retrying transport errors (and 429/503) is
+ * the difference between a script that works and one that fails halfway
+ * through leaving a half-built tenant behind.
+ */
+async function fetchWithRetry(url, options, { attempts = 5, baseDelayMs = 1500 } = {}) {
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      const res = await fetch(url, { ...options, signal: AbortSignal.timeout(45_000) });
+      if ((res.status === 429 || res.status === 503) && attempt < attempts) {
+        await sleep(baseDelayMs * 2 ** (attempt - 1));
+        continue;
+      }
+      return res;
+    } catch (err) {
+      lastError = err;
+      const code = err?.cause?.code ?? err?.name;
+      const transient =
+        code === 'UND_ERR_SOCKET' ||
+        code === 'ECONNRESET' ||
+        code === 'ETIMEDOUT' ||
+        code === 'TimeoutError' ||
+        code === 'ENOTFOUND';
+      if (!transient || attempt === attempts) break;
+      await sleep(baseDelayMs * 2 ** (attempt - 1));
+    }
+  }
+  throw new Error(
+    `Request to ${url} failed after ${attempts} attempts: ${lastError?.cause?.code ?? lastError?.message}. ` +
+      'Nhost rate-limits bursts; waiting a minute usually clears it.',
+  );
+}
+
 /** Admin-privileged GraphQL request. Server-side scripts only. */
 export async function adminGql(query, variables = {}) {
   const { graphql } = nhostUrls();
-  const res = await fetch(graphql, {
+  const res = await fetchWithRetry(graphql, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
@@ -118,7 +159,7 @@ export async function userGql(query, variables, accessToken) {
 
 export async function authPost(path, body) {
   const { auth } = nhostUrls();
-  const res = await fetch(`${auth}${path}`, {
+  const res = await fetchWithRetry(`${auth}${path}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
@@ -133,9 +174,40 @@ export async function authPost(path, body) {
   return { ok: res.ok, status: res.status, payload };
 }
 
+const MARK_VERIFIED = /* GraphQL */ `
+  mutation MarkSeedUserVerified($email: citext!) {
+    updateUsers(where: { email: { _eq: $email } }, _set: { emailVerified: true }) {
+      affected_rows
+      returning {
+        id
+      }
+    }
+  }
+`;
+
+/**
+ * Mark a seeded account's address as verified.
+ *
+ * Nhost Cloud ships with "Require email verification" ON and no SMTP, so a
+ * freshly created seed user can never sign in. Rather than making the whole
+ * setup depend on a dashboard toggle the operator may not have access to, flip
+ * the flag directly with the admin secret.
+ *
+ * This is a deliberate, narrow escalation: it only ever touches the four
+ * throwaway @example.test accounts this script creates, and it requires the
+ * admin secret, which is server-side only. It does NOT weaken verification for
+ * real users — the project setting is untouched.
+ */
+async function markVerified(email) {
+  const data = await adminGql(MARK_VERIFIED, { email });
+  return data.updateUsers?.affected_rows ?? 0;
+}
+
+const isUnverified = (payload) => /not verified|unverified/i.test(payload?.message ?? '');
+
 /**
  * Create the user if absent, then sign in.
- * Returns { id, email, accessToken }.
+ * Returns { id, email, accessToken, created }.
  */
 export async function ensureUser(email, password, displayName) {
   const signup = await authPost('/signup/email-password', {
@@ -150,18 +222,27 @@ export async function ensureUser(email, password, displayName) {
   }
 
   // Already registered, or the project requires email verification.
-  const signin = await authPost('/signin/email-password', { email, password });
+  let signin = await authPost('/signin/email-password', { email, password });
+
+  if (!signin.ok && isUnverified(signin.payload)) {
+    const affected = await markVerified(email);
+    if (affected > 0) {
+      log.info(`verified ${email} via admin (project requires email verification)`);
+      signin = await authPost('/signin/email-password', { email, password });
+    }
+  }
+
   if (signin.ok && signin.payload?.session) {
     const s = signin.payload.session;
     return { id: s.user.id, email, accessToken: s.accessToken, created: false };
   }
 
-  const detail =
-    signin.payload?.message ?? signup.payload?.message ?? `HTTP ${signin.status}`;
+  const detail = signin.payload?.message ?? signup.payload?.message ?? `HTTP ${signin.status}`;
   throw new Error(
     `Could not create or sign in ${email}: ${detail}\n` +
-      `If this says the email is unverified, turn OFF "Require email verification" in the ` +
-      `Nhost dashboard under Auth > Sign-in methods, or verify the address manually.`,
+      `If this mentions verification, either turn OFF "Require email verification" in the ` +
+      `Nhost dashboard under Auth > Sign-in methods, or confirm the admin secret is correct ` +
+      `so this script can verify the seeded accounts itself.`,
   );
 }
 

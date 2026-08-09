@@ -47,6 +47,29 @@ const TARGET_ENDPOINT = arg('target', '').replace(/\/+$/, '');
 const TARGET_SECRET = arg('target-secret', process.env.HASURA_GRAPHQL_ADMIN_SECRET || '');
 const DRY_RUN = process.argv.includes('--dry-run');
 
+/**
+ * Optional literal substitution for the two values Hasura would normally read
+ * from its own environment.
+ *
+ * The committed metadata deliberately uses {{ACTION_BASE_URL}} and
+ * value_from_env: ACTION_WEBHOOK_SECRET, which is the right shape for a real
+ * deployment: the URL and the shared secret live in the platform's environment,
+ * not in a metadata document.
+ *
+ * But applying metadata to a managed Hasura you cannot set environment
+ * variables on is a genuine situation — a hosted project whose dashboard you do
+ * not control, or a verification pass before the handlers are deployed. These
+ * flags inline the values instead.
+ *
+ * TRADE-OFF, stated plainly: --action-secret writes the shared secret into the
+ * metadata document in cleartext, where anyone with admin access can read it
+ * back via export_metadata. That is strictly weaker than an env reference. Use
+ * it for verification, then re-run WITHOUT these flags once the platform env
+ * vars exist, which restores the env-reference form.
+ */
+const ACTION_BASE_URL = arg('action-base-url', '').replace(/\/+$/, '');
+const ACTION_SECRET = arg('action-secret', '');
+
 if (!TARGET_ENDPOINT || !TARGET_SECRET) {
   console.error(
     'Usage: node scripts/hasura-merge-metadata.mjs --target=https://<sub>.hasura.<region>.nhost.run \\\n' +
@@ -131,6 +154,61 @@ const merged = {
   custom_types: source.custom_types ?? {},
   cron_triggers: source.cron_triggers ?? [],
 };
+
+// ------------------------------------------------- optional literal inlining
+
+if (ACTION_BASE_URL || ACTION_SECRET) {
+  let urlCount = 0;
+  let secretCount = 0;
+
+  const inlineHeaders = (headers) =>
+    (headers ?? []).map((h) => {
+      if (ACTION_SECRET && h.value_from_env === 'ACTION_WEBHOOK_SECRET') {
+        secretCount += 1;
+        const { value_from_env, ...rest } = h;
+        void value_from_env;
+        return { ...rest, value: ACTION_SECRET };
+      }
+      return h;
+    });
+
+  const inlineUrl = (url) => {
+    if (ACTION_BASE_URL && typeof url === 'string' && url.includes('{{ACTION_BASE_URL}}')) {
+      urlCount += 1;
+      return url.replace('{{ACTION_BASE_URL}}', ACTION_BASE_URL);
+    }
+    return url;
+  };
+
+  for (const src of merged.sources) {
+    for (const table of src.tables ?? []) {
+      for (const trigger of table.event_triggers ?? []) {
+        trigger.webhook = inlineUrl(trigger.webhook);
+        trigger.headers = inlineHeaders(trigger.headers);
+      }
+    }
+  }
+  for (const action of merged.actions ?? []) {
+    if (action.definition) {
+      action.definition.handler = inlineUrl(action.definition.handler);
+      action.definition.headers = inlineHeaders(action.definition.headers);
+    }
+  }
+  for (const cron of merged.cron_triggers ?? []) {
+    cron.webhook = inlineUrl(cron.webhook);
+    cron.headers = inlineHeaders(cron.headers);
+  }
+
+  log.warn(
+    `inlined ${urlCount} handler URL(s)` +
+      (ACTION_SECRET ? ` and ${secretCount} shared-secret header(s)` : ''),
+  );
+  if (ACTION_SECRET) {
+    log.info('The secret is now stored in the metadata in cleartext rather than');
+    log.info('referenced from the environment. Re-run without --action-secret once');
+    log.info('ACTION_WEBHOOK_SECRET exists in the target\'s environment.');
+  }
+}
 
 const mergedPath = join(ROOT, '.tools', 'merged-metadata.json');
 writeFileSync(mergedPath, JSON.stringify(merged, null, 2));
